@@ -30,7 +30,7 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
             getCommand("skalka").setExecutor(this);
         }
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Plugin SkalkaNetherowa (15 FAL) zostal wlaczony!");
+        getLogger().info("Plugin SkalkaNetherowa zostal wlaczony!");
     }
 
     @Override
@@ -38,7 +38,7 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         if (!(s instanceof Player p) || !p.isOp()) return true;
         if (args.length > 0 && args[0].equalsIgnoreCase("set")) {
             spawn(p.getLocation());
-            p.sendMessage("§a§l[!] §7Postawiono epicka skalke (15 fal)!");
+            p.sendMessage("§a§l[!] §7Postawiono skalke (15 fal)!");
         }
         return true;
     }
@@ -67,7 +67,7 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         guards.removeIf(id -> Bukkit.getEntity(id) == null || Bukkit.getEntity(id).isDead());
         
         if (!guards.isEmpty()) {
-            p.sendMessage("§c§l[!] §7Pokonaj straznikow fali §e" + waveMap.get(crystal.getUniqueId()) + "§c!");
+            p.sendMessage("§c§l[!] §7Najpierw zabij straznikow fali §e" + waveMap.get(crystal.getUniqueId()) + "§c!");
             return;
         }
 
@@ -82,7 +82,6 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
             hpMap.put(id, 4);
         } else {
             p.sendMessage("§e§l[!] §7HP: §6" + hp + "/4 §7(Fala: §e" + waveMap.get(id) + "§7)");
-            crystal.getWorld().spawnParticle(Particle.FLAME, crystal.getLocation().add(0, 1, 0), 5, 0.1, 0.1, 0.1, 0.05);
         }
     }
 
@@ -111,13 +110,11 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
                 if (ent instanceof EnderCrystal cr && cr.getPersistentDataContainer().has(key, PersistentDataType.BYTE)) {
                     UUID id = cr.getUniqueId();
                     int currentWave = waveMap.getOrDefault(id, 1);
-
                     if (currentWave >= 15) {
                         completeSkałka(cr);
                     } else {
                         waveMap.put(id, currentWave + 1);
                         cr.setCustomName("§c§lSkalka §8[§eUderz! Fala " + (currentWave + 1) + "/15§8]");
-                        cr.getWorld().playSound(cr.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
                     }
                     break;
                 }
@@ -129,14 +126,18 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         Location loc = cr.getLocation();
         Location rLoc = respawnMap.get(cr.getUniqueId());
         dropLoot(loc);
-        cr.getWorld().spawnParticle(Particle.EXPLOSION_HUGE, loc, 3);
-        cr.getWorld().playSound(loc, Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+        cr.remove();
         hpMap.remove(cr.getUniqueId());
         waveMap.remove(cr.getUniqueId());
-        cr.remove();
-        Bukkit.broadcastMessage("§6§l[SKAŁKA] §eZniszczona po 15 falach! Odrodzi sie za 30 min.");
+        Bukkit.broadcastMessage("§6§l[SKAŁKA] §eZniszczona! Odrodzi sie za 30 min.");
         Bukkit.getScheduler().runTaskLater(this, () -> spawn(rLoc), 36000L);
     }
 
     private void dropLoot(Location l) {
         l.getWorld().dropItemNaturally(l, new ItemStack(Material.NETHERITE_SCRAP, 2));
+        l.getWorld().dropItemNaturally(l, new ItemStack(Material.DIAMOND, 5));
+        l.getWorld().dropItemNaturally(l, new ItemStack(Material.GOLDEN_APPLE, 2));
+        l.getWorld().dropItemNaturally(l, new ItemStack(Material.GHAST_TEAR, 3));
+        l.getWorld().dropItemNaturally(l, new ItemStack(Material.WITHER_SKELETON_SKULL, 1));
+    }
+}
