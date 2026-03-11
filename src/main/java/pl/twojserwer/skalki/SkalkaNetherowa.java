@@ -18,6 +18,7 @@ import java.util.*;
 public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExecutor {
 
     private final Map<UUID, Integer> hpMap = new HashMap<>();
+    private final Map<UUID, Integer> waveMap = new HashMap<>(); // Przechowuje numer fali
     private final Set<UUID> guards = new HashSet<>();
     private final Map<UUID, Location> respawnMap = new HashMap<>();
     private NamespacedKey key;
@@ -34,7 +35,7 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         if (!(s instanceof Player p) || !p.isOp()) return true;
         if (args.length > 0 && args[0].equalsIgnoreCase("set")) {
             spawn(p.getLocation());
-            p.sendMessage("§aPostawiono skalke!");
+            p.sendMessage("§a§l[!] §7Postawiono epicką skałkę (15 fal)!");
         }
         return true;
     }
@@ -42,11 +43,14 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
     private void spawn(Location loc) {
         EnderCrystal crystal = loc.getWorld().spawn(loc, EnderCrystal.class);
         crystal.setShowingBottom(true);
-        crystal.setCustomName("§c§lSkalka Netherowa");
+        crystal.setCustomName("§c§lSkałka Netherowa §8[§eFala 1/15§8]");
         crystal.setCustomNameVisible(true);
         crystal.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
-        hpMap.put(crystal.getUniqueId(), 4);
-        respawnMap.put(crystal.getUniqueId(), loc.clone());
+        
+        UUID id = crystal.getUniqueId();
+        hpMap.put(id, 4);
+        waveMap.put(id, 1);
+        respawnMap.put(id, loc.clone());
     }
 
     @EventHandler
@@ -57,51 +61,17 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         e.setCancelled(true);
         if (!(e.getDamager() instanceof Player p)) return;
 
+        // Czyścimy listę strażników z nieistniejących mobów
         guards.removeIf(id -> Bukkit.getEntity(id) == null || Bukkit.getEntity(id).isDead());
+        
         if (!guards.isEmpty()) {
-            p.sendMessage("§cZabij straznikow!");
+            p.sendMessage("§c§l[!] §7Musisz pokonać strażników fali §e" + waveMap.get(crystal.getUniqueId()) + "§c!");
             return;
         }
 
-        int hp = hpMap.getOrDefault(crystal.getUniqueId(), 4) - 1;
-        hpMap.put(crystal.getUniqueId(), hp);
+        UUID id = crystal.getUniqueId();
+        int hp = hpMap.getOrDefault(id, 4) - 1;
+        hpMap.put(id, hp);
 
         if (hp <= 0) {
-            for (int i = 0; i < 3; i++) {
-                Entity m = crystal.getLocation().getWorld().spawnEntity(crystal.getLocation().add(1,0,1), 
-                    (i % 2 == 0) ? EntityType.WITHER_SKELETON : EntityType.BLAZE);
-                guards.add(m.getUniqueId());
-            }
-            p.sendMessage("§6Straznicy sie pojawili!");
-        } else {
-            p.sendMessage("§eHP: " + hp + "/4");
-        }
-    }
-
-    @EventHandler
-    public void onDeath(EntityDeathEvent e) {
-        if (guards.contains(e.getEntity().getUniqueId())) {
-            guards.remove(e.getEntity().getUniqueId());
-            if (guards.isEmpty()) {
-                for (Entity ent : e.getEntity().getNearbyEntities(10, 10, 10)) {
-                    if (ent instanceof EnderCrystal cr && cr.getPersistentDataContainer().has(key, PersistentDataType.BYTE)) {
-                        drop(cr.getLocation());
-                        Location loc = respawnMap.get(cr.getUniqueId());
-                        cr.remove();
-                        Bukkit.broadcastMessage("§eSkalka rozbita! Odnowi sie za 30 min.");
-                        Bukkit.getScheduler().runTaskLater(this, () -> spawn(loc), 36000L);
-                        break;
-                    }
-                }
-            }
-        }
-    }
-
-    private void drop(Location l) {
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.DIAMOND, 2));
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.GHAST_TEAR, 1));
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.BLAZE_ROD, 2));
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.GOLD_INGOT, 4));
-        if (Math.random() < 0.1) l.getWorld().dropItemNaturally(l, new ItemStack(Material.NETHERITE_SCRAP, 1));
-    }
-}
+            int currentWave = waveMap.getOrDefault(id,
