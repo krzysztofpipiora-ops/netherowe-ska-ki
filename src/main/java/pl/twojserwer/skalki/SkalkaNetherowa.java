@@ -20,7 +20,8 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
     private final Map<UUID, Integer> hpMap = new HashMap<>();
     private final Map<UUID, Integer> waveMap = new HashMap<>();
     private final Set<UUID> guards = new HashSet<>();
-    private final Map<UUID, Location> respawnMap = new HashMap<>();
+    // Używamy Stringa jako klucza lokalizacji, aby był trwały
+    private final Map<String, Location> respawnLocs = new HashMap<>();
     private NamespacedKey key;
 
     @Override
@@ -30,36 +31,64 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
             getCommand("skalka").setExecutor(this);
         }
         getServer().getPluginManager().registerEvents(this, this);
-        getLogger().info("Plugin SkalkaNetherowa zostal wlaczony!");
+        
+        // Tworzenie folderu na config, jeśli nie istnieje
+        saveDefaultConfig();
+        loadLocationsFromConfig();
+        
+        getLogger().info("Plugin SkalkaNetherowa zostal wlaczony i wczytal lokacje!");
+    }
+
+    private void loadLocationsFromConfig() {
+        if (getConfig().getConfigurationSection("locs") == null) return;
+        for (String id : getConfig().getConfigurationSection("locs").getKeys(false)) {
+            Location loc = getConfig().getLocation("locs." + id);
+            if (loc != null) {
+                respawnLocs.put(id, loc);
+                spawn(loc, id);
+            }
+        }
     }
 
     @Override
     public boolean onCommand(CommandSender s, Command c, String l, String[] args) {
         if (!(s instanceof Player p) || !p.isOp()) return true;
         if (args.length > 0 && args[0].equalsIgnoreCase("set")) {
-            spawn(p.getLocation());
-            p.sendMessage("§a§l[!] §7Postawiono skalke (15 fal)!");
+            String randomID = UUID.randomUUID().toString().substring(0, 8);
+            Location loc = p.getLocation();
+            
+            respawnLocs.put(randomID, loc);
+            getConfig().set("locs." + randomID, loc);
+            saveConfig();
+            
+            spawn(loc, randomID);
+            p.sendMessage("§a§l[!] §7Skałka postawiona i zapisana w configu!");
+            return true;
         }
-        return true;
+        return false;
     }
 
-    private void spawn(Location loc) {
-        EnderCrystal crystal = loc.getWorld().spawn(loc, EnderCrystal.class);
+    private void spawn(Location loc, String locID) {
+        World world = loc.getWorld();
+        if (world == null) return;
+
+        EnderCrystal crystal = world.spawn(loc, EnderCrystal.class);
         crystal.setShowingBottom(true);
-        crystal.setCustomName("§c§lSkalka Netherowa §8[§eFala 1/15§8]");
+        crystal.setCustomName("§c§lSkałka Netherowa §8[§eFala 1/15§8]");
         crystal.setCustomNameVisible(true);
-        crystal.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
         
-        UUID id = crystal.getUniqueId();
-        hpMap.put(id, 4);
-        waveMap.put(id, 1);
-        respawnMap.put(id, loc.clone());
+        // Zapisujemy ID lokalizacji w samym krysztale
+        crystal.getPersistentDataContainer().set(key, PersistentDataType.STRING, locID);
+        
+        UUID entityID = crystal.getUniqueId();
+        hpMap.put(entityID, 4);
+        waveMap.put(entityID, 1);
     }
 
     @EventHandler
     public void onHit(EntityDamageByEntityEvent e) {
         if (!(e.getEntity() instanceof EnderCrystal crystal)) return;
-        if (!crystal.getPersistentDataContainer().has(key, PersistentDataType.BYTE)) return;
+        if (!crystal.getPersistentDataContainer().has(key, PersistentDataType.STRING)) return;
         
         e.setCancelled(true);
         if (!(e.getDamager() instanceof Player p)) return;
@@ -67,7 +96,7 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         guards.removeIf(id -> Bukkit.getEntity(id) == null || Bukkit.getEntity(id).isDead());
         
         if (!guards.isEmpty()) {
-            p.sendMessage("§c§l[!] §7Najpierw zabij straznikow fali §e" + waveMap.get(crystal.getUniqueId()) + "§c!");
+            p.sendMessage("§c§l[!] §7Najpierw zabij strażników!");
             return;
         }
 
@@ -93,11 +122,11 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
             EntityType type = (Math.random() < 0.6) ? EntityType.WITHER_SKELETON : EntityType.BLAZE;
             Entity m = loc.getWorld().spawnEntity(loc.clone().add(Math.random()*2-1, 0, Math.random()*2-1), type);
             if (m instanceof LivingEntity) {
-                ((LivingEntity) m).setCustomName("§4Straznik Fali " + waveNumber);
+                ((LivingEntity) m).setCustomName("§4Strażnik Fali " + waveNumber);
             }
             guards.add(m.getUniqueId());
         }
-        crystal.setCustomName("§c§lSkalka §8[§eWALKA: FALA " + waveNumber + "§8]");
+        crystal.setCustomName("§c§lSkałka §8[§eWALKA: FALA " + waveNumber + "§8]");
     }
 
     @EventHandler
@@ -107,14 +136,15 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
 
         if (guards.isEmpty()) {
             for (Entity ent : e.getEntity().getNearbyEntities(15, 15, 15)) {
-                if (ent instanceof EnderCrystal cr && cr.getPersistentDataContainer().has(key, PersistentDataType.BYTE)) {
-                    UUID id = cr.getUniqueId();
-                    int currentWave = waveMap.getOrDefault(id, 1);
+                if (ent instanceof EnderCrystal cr && cr.getPersistentDataContainer().has(key, PersistentDataType.STRING)) {
+                    String locID = cr.getPersistentDataContainer().get(key, PersistentDataType.STRING);
+                    int currentWave = waveMap.getOrDefault(cr.getUniqueId(), 1);
+
                     if (currentWave >= 15) {
-                        completeSkałka(cr);
+                        finishSkałka(cr, locID);
                     } else {
-                        waveMap.put(id, currentWave + 1);
-                        cr.setCustomName("§c§lSkalka §8[§eUderz! Fala " + (currentWave + 1) + "/15§8]");
+                        waveMap.put(cr.getUniqueId(), currentWave + 1);
+                        cr.setCustomName("§c§lSkałka §8[§eUderz! Fala " + (currentWave + 1) + "/15§8]");
                     }
                     break;
                 }
@@ -122,22 +152,34 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         }
     }
 
-    private void completeSkałka(EnderCrystal cr) {
-        Location loc = cr.getLocation();
-        Location rLoc = respawnMap.get(cr.getUniqueId());
-        dropLoot(loc);
-        cr.remove();
+    private void finishSkałka(EnderCrystal cr, String locID) {
+        Location dropLoc = cr.getLocation();
+        Location respawnLoc = respawnLocs.get(locID);
+        
+        dropLoot(dropLoc);
+        
         hpMap.remove(cr.getUniqueId());
         waveMap.remove(cr.getUniqueId());
-        Bukkit.broadcastMessage("§6§l[SKAŁKA] §eZniszczona! Odrodzi sie za 30 min.");
-        Bukkit.getScheduler().runTaskLater(this, () -> spawn(rLoc), 36000L);
+        cr.remove();
+        
+        Bukkit.broadcastMessage("§6§l[SKAŁKA] §eZniszczona! Odrodzi się za 30 min.");
+        
+        // Odliczanie (30 minut = 36000 ticków)
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (respawnLoc != null) {
+                spawn(respawnLoc, locID);
+            }
+        }, 36000L);
     }
 
     private void dropLoot(Location l) {
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.NETHERITE_SCRAP, 2));
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.DIAMOND, 5));
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.GOLDEN_APPLE, 2));
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.GHAST_TEAR, 3));
-        l.getWorld().dropItemNaturally(l, new ItemStack(Material.WITHER_SKELETON_SKULL, 1));
+        World w = l.getWorld();
+        if (w == null) return;
+        w.dropItemNaturally(l, new ItemStack(Material.NETHERITE_SCRAP, 2));
+        w.dropItemNaturally(l, new ItemStack(Material.DIAMOND, 5));
+        w.dropItemNaturally(l, new ItemStack(Material.GOLDEN_APPLE, 2));
+        w.dropItemNaturally(l, new ItemStack(Material.GHAST_TEAR, 3));
+        w.dropItemNaturally(l, new ItemStack(Material.BLAZE_ROD, 6));
+        // Głowa witherowego szkieleta została usunięta z tej listy
     }
 }
