@@ -18,7 +18,7 @@ import java.util.*;
 public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExecutor {
 
     private final Map<UUID, Integer> hpMap = new HashMap<>();
-    private final Map<UUID, Integer> waveMap = new HashMap<>(); // Przechowuje numer fali
+    private final Map<UUID, Integer> waveMap = new HashMap<>();
     private final Set<UUID> guards = new HashSet<>();
     private final Map<UUID, Location> respawnMap = new HashMap<>();
     private NamespacedKey key;
@@ -26,8 +26,11 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
     @Override
     public void onEnable() {
         this.key = new NamespacedKey(this, "skalka");
-        getCommand("skalka").setExecutor(this);
+        if (getCommand("skalka") != null) {
+            getCommand("skalka").setExecutor(this);
+        }
         getServer().getPluginManager().registerEvents(this, this);
+        getLogger().info("Plugin SkalkaNetherowa (15 FAL) zostal wlaczony!");
     }
 
     @Override
@@ -35,7 +38,7 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         if (!(s instanceof Player p) || !p.isOp()) return true;
         if (args.length > 0 && args[0].equalsIgnoreCase("set")) {
             spawn(p.getLocation());
-            p.sendMessage("§a§l[!] §7Postawiono epicką skałkę (15 fal)!");
+            p.sendMessage("§a§l[!] §7Postawiono epicka skalke (15 fal)!");
         }
         return true;
     }
@@ -43,7 +46,7 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
     private void spawn(Location loc) {
         EnderCrystal crystal = loc.getWorld().spawn(loc, EnderCrystal.class);
         crystal.setShowingBottom(true);
-        crystal.setCustomName("§c§lSkałka Netherowa §8[§eFala 1/15§8]");
+        crystal.setCustomName("§c§lSkalka Netherowa §8[§eFala 1/15§8]");
         crystal.setCustomNameVisible(true);
         crystal.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
         
@@ -61,11 +64,10 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         e.setCancelled(true);
         if (!(e.getDamager() instanceof Player p)) return;
 
-        // Czyścimy listę strażników z nieistniejących mobów
         guards.removeIf(id -> Bukkit.getEntity(id) == null || Bukkit.getEntity(id).isDead());
         
         if (!guards.isEmpty()) {
-            p.sendMessage("§c§l[!] §7Musisz pokonać strażników fali §e" + waveMap.get(crystal.getUniqueId()) + "§c!");
+            p.sendMessage("§c§l[!] §7Pokonaj straznikow fali §e" + waveMap.get(crystal.getUniqueId()) + "§c!");
             return;
         }
 
@@ -74,4 +76,67 @@ public class SkalkaNetherowa extends JavaPlugin implements Listener, CommandExec
         hpMap.put(id, hp);
 
         if (hp <= 0) {
-            int currentWave = waveMap.getOrDefault(id,
+            int currentWave = waveMap.getOrDefault(id, 1);
+            spawnWave(crystal, currentWave);
+            p.sendMessage("§6§l[!] §eNadchodzi FALA " + currentWave + "!");
+            hpMap.put(id, 4);
+        } else {
+            p.sendMessage("§e§l[!] §7HP: §6" + hp + "/4 §7(Fala: §e" + waveMap.get(id) + "§7)");
+            crystal.getWorld().spawnParticle(Particle.FLAME, crystal.getLocation().add(0, 1, 0), 5, 0.1, 0.1, 0.1, 0.05);
+        }
+    }
+
+    private void spawnWave(EnderCrystal crystal, int waveNumber) {
+        Location loc = crystal.getLocation();
+        int mobCount = 3 + (waveNumber / 2); 
+        
+        for (int i = 0; i < mobCount; i++) {
+            EntityType type = (Math.random() < 0.6) ? EntityType.WITHER_SKELETON : EntityType.BLAZE;
+            Entity m = loc.getWorld().spawnEntity(loc.clone().add(Math.random()*2-1, 0, Math.random()*2-1), type);
+            if (m instanceof LivingEntity) {
+                ((LivingEntity) m).setCustomName("§4Straznik Fali " + waveNumber);
+            }
+            guards.add(m.getUniqueId());
+        }
+        crystal.setCustomName("§c§lSkalka §8[§eWALKA: FALA " + waveNumber + "§8]");
+    }
+
+    @EventHandler
+    public void onDeath(EntityDeathEvent e) {
+        if (!guards.contains(e.getEntity().getUniqueId())) return;
+        guards.remove(e.getEntity().getUniqueId());
+
+        if (guards.isEmpty()) {
+            for (Entity ent : e.getEntity().getNearbyEntities(15, 15, 15)) {
+                if (ent instanceof EnderCrystal cr && cr.getPersistentDataContainer().has(key, PersistentDataType.BYTE)) {
+                    UUID id = cr.getUniqueId();
+                    int currentWave = waveMap.getOrDefault(id, 1);
+
+                    if (currentWave >= 15) {
+                        completeSkałka(cr);
+                    } else {
+                        waveMap.put(id, currentWave + 1);
+                        cr.setCustomName("§c§lSkalka §8[§eUderz! Fala " + (currentWave + 1) + "/15§8]");
+                        cr.getWorld().playSound(cr.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1f, 1f);
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    private void completeSkałka(EnderCrystal cr) {
+        Location loc = cr.getLocation();
+        Location rLoc = respawnMap.get(cr.getUniqueId());
+        dropLoot(loc);
+        cr.getWorld().spawnParticle(Particle.EXPLOSION_HUGE, loc, 3);
+        cr.getWorld().playSound(loc, Sound.UI_TOAST_CHALLENGE_COMPLETE, 1f, 1f);
+        hpMap.remove(cr.getUniqueId());
+        waveMap.remove(cr.getUniqueId());
+        cr.remove();
+        Bukkit.broadcastMessage("§6§l[SKAŁKA] §eZniszczona po 15 falach! Odrodzi sie za 30 min.");
+        Bukkit.getScheduler().runTaskLater(this, () -> spawn(rLoc), 36000L);
+    }
+
+    private void dropLoot(Location l) {
+        l.getWorld().dropItemNaturally(l, new ItemStack(Material.NETHERITE_SCRAP, 2));
