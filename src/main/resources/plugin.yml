@@ -1,8 +1,7 @@
 name: SkalkaNetherowa
-version: 1.0
+version: 1.4
 main: pl.twojserwer.skalki.SkalkaNetherowa
 api-version: "1.20"
 commands:
   skalka:
-    description: Komenda do skalek
-    permission: skalka.admin
+    description: Komenda glowna
